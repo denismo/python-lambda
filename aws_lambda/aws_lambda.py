@@ -18,7 +18,7 @@ from .helpers import mkdir, read, readBinary, archive, timestamp
 log = logging.getLogger(__name__)
 
 
-def deploy(src, local_package=None, subfolders=None):
+def deploy(src, local_package=None, subfolders=None, perform_install=True):
     """Deploys a new function to AWS Lambda.
 
     :param str src:
@@ -104,7 +104,7 @@ def init(src, minimal=False):
         copy(path_to_file, src)
 
 
-def build(src, local_package=None, subfolders=None):
+def build(src, local_package=None, subfolders=None, perform_install=True):
     """Builds the file bundle.
 
     :param str src:
@@ -117,6 +117,7 @@ def build(src, local_package=None, subfolders=None):
     # Load and parse the config file.
     path_to_config_file = os.path.join(src, 'config.yaml')
     cfg = read(path_to_config_file, loader=yaml.load)
+    subfolders = subfolders or cfg.get('subfolders', None)
 
     # Get the absolute path to the output directory and create it if it doesn't
     # already exist.
@@ -130,8 +131,8 @@ def build(src, local_package=None, subfolders=None):
     output_filename = "{0}-{1}.zip".format(timestamp(), function_name)
 
     path_to_temp = mkdtemp(prefix='aws-lambda')
-    # DOM: Disabled pip install for now as it is too heavy
-    # pip_install_to_target(path_to_temp, local_package)
+    if perform_install:
+        pip_install_to_target(path_to_temp, local_package)
 
     # Gracefully handle whether ".zip" was included in the filename or not.
     output_filename = ('{0}.zip'.format(output_filename)
