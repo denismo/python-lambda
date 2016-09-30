@@ -15,6 +15,9 @@ def read(path, loader=None):
             return fh.read()
         return loader(fh.read())
 
+def readBinary(path):
+    with open(path, 'rb') as fh:
+        return fh.read()
 
 def archive(src, dest, filename):
     output = os.path.join(dest, filename)

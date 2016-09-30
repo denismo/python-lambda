@@ -12,13 +12,13 @@ import boto3
 import pip
 import yaml
 from . import project_template
-from .helpers import mkdir, read, archive, timestamp
+from .helpers import mkdir, read, readBinary, archive, timestamp
 
 
 log = logging.getLogger(__name__)
 
 
-def deploy(src, local_package=None):
+def deploy(src, local_package=None, subfolders=None):
     """Deploys a new function to AWS Lambda.
 
     :param str src:
@@ -36,7 +36,7 @@ def deploy(src, local_package=None):
     # folder then add the handler file in the root of this directory.
     # Zip the contents of this folder into a single file and output to the dist
     # directory.
-    path_to_zip_file = build(src, local_package)
+    path_to_zip_file = build(src, local_package, subfolders)
 
     if function_exists(cfg, cfg.get('function_name')):
         update_function(cfg, path_to_zip_file)
@@ -104,7 +104,7 @@ def init(src, minimal=False):
         copy(path_to_file, src)
 
 
-def build(src, local_package=None):
+def build(src, local_package=None, subfolders=None):
     """Builds the file bundle.
 
     :param str src:
@@ -130,7 +130,8 @@ def build(src, local_package=None):
     output_filename = "{0}-{1}.zip".format(timestamp(), function_name)
 
     path_to_temp = mkdtemp(prefix='aws-lambda')
-    pip_install_to_target(path_to_temp, local_package)
+    # DOM: Disabled pip install for now as it is too heavy
+    # pip_install_to_target(path_to_temp, local_package)
 
     # Gracefully handle whether ".zip" was included in the filename or not.
     output_filename = ('{0}.zip'.format(output_filename)
@@ -138,20 +139,37 @@ def build(src, local_package=None):
                        else output_filename)
 
     files = []
-    for filename in os.listdir(src):
-        if os.path.isfile(filename):
-            if filename == '.DS_Store':
-                continue
-            if filename == 'config.yaml':
-                continue
-            files.append(os.path.join(src, filename))
+    if subfolders is None:
+        for filename in os.listdir(src):
+            if os.path.isfile(filename):
+                if filename == '.DS_Store':
+                    continue
+                if filename == 'config.yaml':
+                    continue
+                if filename.endswith('.pyc'): continue
+                files.append(os.path.join(src, filename))
+    else:
+        for filename in os.listdir(src):
+            if os.path.isdir(os.path.join(src, filename)) and filename in subfolders:
+                for root, subdirs, subfiles in os.walk(os.path.join(src, filename)):
+                    for subfilename in subfiles:
+                        if subfilename.endswith('.pyc'): continue
+                        files.append(os.path.join(root, subfilename))
 
     # "cd" into `temp_path` directory.
     os.chdir(path_to_temp)
     for f in files:
-        _, filename = os.path.split(f)
+        # _, filename = os.path.split(f)
+        if not f.startswith(src):
+            logging.warn('Unable to determine relative path for %s', f)
+            continue
+
+        filename = f[len(src)+1:]
 
         # Copy handler file into root of the packages folder.
+        targetDir = os.path.dirname(os.path.join(path_to_temp, filename))
+        if not os.path.exists(targetDir):
+            os.makedirs(targetDir)
         copyfile(f, os.path.join(path_to_temp, filename))
 
     # Zip them together into a single file.
@@ -242,7 +260,7 @@ def create_function(cfg, path_to_zip_file):
     """Register and upload a function to AWS Lambda."""
 
     print("Creating your new Lambda function")
-    byte_stream = read(path_to_zip_file)
+    byte_stream = readBinary(path_to_zip_file)
     aws_access_key_id = cfg.get('aws_access_key_id')
     aws_secret_access_key = cfg.get('aws_secret_access_key')
 
@@ -268,8 +286,8 @@ def create_function(cfg, path_to_zip_file):
 def update_function(cfg, path_to_zip_file):
     """Updates the code of an existing Lambda function"""
 
-    print("Updating your Lambda function")
-    byte_stream = read(path_to_zip_file)
+    print("Updating your Lambda function using", path_to_zip_file)
+    byte_stream = readBinary(path_to_zip_file)
     aws_access_key_id = cfg.get('aws_access_key_id')
     aws_secret_access_key = cfg.get('aws_secret_access_key')
 
